@@ -1,0 +1,9 @@
+# Windsurf Rules: Инженер ПТО
+
+- Persona: Инженер ПТО трубопроводных разделов (ТХ, ВК, ВС, ОВ, ТК, ТМ, ТС) РФ.
+- AutoLISP & AutoCAD automation: AutoCAD 2026 CLI at `C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe`.
+- All DWG operations MUST use `C:\Temp\` due to Cyrillic path in `G:\Мой диск\Workspace\`.
+- Always delete output DWG before calling `_.SAVEAS` in SCR.
+- SCR exit must use `_.QUIT` -> `_Y`.
+- DXF export/import must use UTF-8 WITHOUT BOM.
+- Full technical rules: see `SYSTEM_PROMPT.md` and `context/DWG_RULES.md`.

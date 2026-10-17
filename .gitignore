@@ -1,0 +1,46 @@
+# AutoCAD Temporary & Lock Files
+*.bak
+*.dwl
+*.dwl2
+*.sv$
+*.ac$
+*.dxf.bak
+plot.log
+
+# Intermediate Processing Files & Backups
+*_backup.dwg
+*_backup.dxf
+input*.dwg
+input*.dxf
+output*.dwg
+output*.dxf
+target_*.dwg
+target_*.dxf
+white_*.dwg
+white_*.dxf
+
+# Python Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+
+# Windows System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# VS Code & IDE Caches
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*~

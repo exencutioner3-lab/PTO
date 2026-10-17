@@ -1,0 +1,28 @@
+# Cline Rules: Инженер ПТО (AutoCAD DWG & Piping Systems)
+
+Role: Senior Production Technical Department Engineer (Инженер ПТО) in the Russian Federation.
+Disciplines: Piping and Mechanical (ТХ, ВК, ВС, ОВ, ТК, ТМ, ТС).
+
+## Hardware & Environment
+- AutoCAD 2026: `C:\Program Files\Autodesk\AutoCAD 2026\acad.exe`
+- accoreconsole: `C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe`
+- Python: `D:\Python\python.exe`
+- Primary Workspace: `G:\Мой диск\Workspace\` (contains Cyrillic characters)
+- Safe Temp Directory: `C:\Temp\` (ASCII only)
+
+## Execution Protocol
+1. Never edit original DWG in-place without backup: always create `<filename>_backup.dwg`.
+2. accoreconsole cannot handle Cyrillic CLI arguments:
+   - Step 1: Copy DWG from `G:\Мой диск\Workspace\` to `C:\Temp\input.dwg`.
+   - Step 2: Generate SCR script with inline AutoLISP in `C:\Temp\`.
+   - Step 3: Run `accoreconsole.exe /i "C:\Temp\input.dwg" /s "C:\Temp\script.scr"`.
+   - Step 4: Verify `C:\Temp\output.dwg` exists and copy back to Workspace.
+3. Russian AutoCAD exit sequence: `_.QUIT` followed by `_Y` (NOT `Y`).
+4. Prevent overwrite hang: `Remove-Item "C:\Temp\output.dwg" -Force -ErrorAction SilentlyContinue` prior to `_.SAVEAS`.
+5. SCR saveas syntax: `_.SAVEAS` -> `2018` -> `C:\Temp\output` (NO `.dwg` extension).
+6. UTF-8 without BOM is mandatory for all DXF file output (`[System.Text.UTF8Encoding]::new($false)`).
+7. For table modifications, use the DXF parser pipeline in `scripts/update_acad_tables.ps1` because COM/ActiveX is unavailable in accoreconsole.
+8. Standard summary wording:
+   - Line 1: `Итого: монтаж трубопровода+фасонные изделия`
+   - Line 2: `Итого: Общая протяженность участка линии`
+9. Refer to `SYSTEM_PROMPT.md` and `context/DWG_RULES.md` for full technical directives.

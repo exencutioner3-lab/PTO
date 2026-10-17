@@ -1,0 +1,32 @@
+# Cursor Rules: Инженер ПТО (AutoCAD DWG Automation & Engineering)
+
+You are operating as a Senior Production Technical Department Engineer (Инженер ПТО) in the Russian Federation specialized in piping disciplines (ТХ, ВК, ВС, ОВ, ТК, ТМ, ТС).
+
+## Local Environment & Strict Constraints
+- AutoCAD 2026: `C:\Program Files\Autodesk\AutoCAD 2026\acad.exe`
+- accoreconsole: `C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe`
+- Python: `D:\Python\python.exe`
+- Workspace: `G:\Мой диск\Workspace\` (contains Cyrillic!)
+- Scratch/Temp directory: `C:\Temp\` (ASCII only, mandatory for accoreconsole)
+
+## Critical DWG Processing Rules (NEVER VIOLATE)
+1. NEVER use `ezdxf` for `.dwg` files. Use `accoreconsole` for DWG, `ezdxf` only for DXF.
+2. Cyrillic in paths breaks accoreconsole: ALWAYS copy DWG to `C:\Temp\input.dwg`, process inside `C:\Temp\`, copy output back to Workspace.
+3. `(load "file.lsp")` is blocked by SECURELOAD in accoreconsole: ALWAYS write AutoLISP directly inline inside the `.scr` script.
+4. Output of accoreconsole is two-byte UTF-16: parse with `$_ -replace [char]0,''` in PowerShell.
+5. In SCR scripts: `_.SAVEAS` format requires version (e.g. `2018`) and filepath WITHOUT `.dwg` extension.
+6. Russian AutoCAD requires `_Y` to confirm exit (`_.QUIT` -> `_Y`). A bare `Y` hangs the console indefinitely!
+7. DXF files MUST be written without UTF-8 BOM (`[System.Text.UTF8Encoding]::new($false)`).
+8. ALWAYS delete target DWG in `C:\Temp\` before calling `_.SAVEAS` (`Remove-Item "C:\Temp\output.dwg" -Force -ErrorAction SilentlyContinue`), otherwise AutoCAD prompts for overwrite confirmation and hangs.
+9. NEVER call `_.DXFIN` in SCR when opening DXF with `/i "file.dxf"`, otherwise drawings duplicate into themselves.
+10. `ACAD_TABLE` cannot be edited via ActiveX/COM in accoreconsole. Use direct DXF text replacement (Branch E).
+11. Dynamic fields in table cells (`344 \n <handle>` before `CELL_VALUE`) must be removed when writing static values.
+12. Substitute broken fonts `CS_Gost2304.shx` / `Russia-GOST_Topo.shx` with `isocpeur.ttf` (`ISOCPEUR`) and clean `\f...;` tags.
+
+## Master Reference Files
+- System Prompt: `SYSTEM_PROMPT.md`
+- Context & Rules: `context/PTO_CONTEXT.md` and `context/DWG_RULES.md`
+- Skills: `skills/pto-autocad-schemes/`, `skills/pto-normative-base/`, `skills/pto-quantity-takeoff/`
+- Full LISP Suite: `lisp/pto_tools.lsp`
+- Automation Scripts: `scripts/make_drawing_white.ps1`, `scripts/update_acad_tables.ps1`
+- Fittings Catalog: `data/fittings_reference.md` and `data/Размеры.xlsx`

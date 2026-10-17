@@ -1,0 +1,636 @@
+;;; ==========================================================================
+;;; PTO_TOOLS.LSP — Единый комплекс AutoLISP для инженера ПТО (AutoCAD 2026)
+;;; Специализация: Трубопроводные разделы (ТХ / ВК / ВС / ОВ / ТК / ТМ / ТС)
+;;; ==========================================================================
+;;;
+;;; Содержит полный арсенал автоматизации:
+;;; 1. СЛОИ И СТАНДАРТЫ (ГОСТ 21.205 / 21.101):
+;;;    - СЛОИ-ПТО        — создание стандартных слоев всех разделов
+;;;    - СЛОИ-ТС/ТМ/ВК...— создание слоев выбранного раздела
+;;;    - ИСПРАВИТЬ-ШРИФТЫ— замена битых shx на ISOCPEUR, стили ГОСТ и ШТАМП
+;;;    - РАМКА-ГОСТ      — вставка форматов А1-А4 с отступами 20/5 мм и штампом
+;;;
+;;; 2. ОЧИСТКА И ОБРАБОТКА DWG:
+;;;    - ОЧИСТКА-РАЗМЕРОВ— комплексное удаление DIMENSION, выносок, засечек и L=...
+;;;    - УДАЛИТЬ-ТЕКСТ   — удаление текста с чертежа или выбранного слоя
+;;;    - УДАЛИТЬ-ШТРИХОВКУ— удаление всех объектов HATCH
+;;;    - СБРОС-ПОСЛОЮ    — сброс цвета, типа линий и весов в ByLayer (включая блоки)
+;;;    - ОБЕСЦВЕТИТЬ     — перевод чертежа в белый монохром (Color 7)
+;;;    - ПОЛНАЯ-ОЧИСТКА  — глубокая очистка неиспользуемых блоков и аудит (PURGE/AUDIT)
+;;;
+;;; 3. ПОДСЧЁТ ОБЪЁМОВ И ВОР (ГОСТ 8732 / 10704):
+;;;    - ДЛИНА-ТРУБ      — точная длина полилиний/линий в мм и м + масса металла по Ду
+;;;    - ПОДСЧЕТ-БЛОКОВ  — спецификация арматуры, опор и оборудования
+;;;    - ПОДСЧЕТ-СТЫКОВ  — ведомость и количество сварных стыков ст.N
+;;;
+;;; 4. ИНСТРУМЕНТЫ ЧЕРЧЕНИЯ И СХЕМ:
+;;;    - ОТВОД-ДУГА      — радиусное сопряжение труб (ГОСТ 17375 R=1.5Dy / ГОСТ 30753)
+;;;    - СТЫК            — маркер сварного стыка ст.N с автонумерацией
+;;;    - СТЫК-НОМЕР      — сброс/установка текущего номера стыка
+;;;    - ПОЗИЦИЯ         — выноска позиции спецификации в рамке [N] с автонумерацией
+;;;    - УКЛОН           — стрелка уклона i=... вдоль оси трубы
+;;;    - АРМАТУРА-ГОСТ   — условные обозначения (кран, задвижка, обратный, опоры)
+;;;
+;;; ==========================================================================
+
+(vl-load-com)
+
+;; Глобальные переменные счетчиков
+(if (null *pto-weld-counter*) (setq *pto-weld-counter* 1))
+(if (null *pto-tag-counter*)  (setq *pto-tag-counter* 1))
+
+;; ==========================================================================
+;; БЛОК 1: СЛОИ, ШРИФТЫ, РАМКИ
+;; ==========================================================================
+
+(defun pto:load-ltype (ltName / )
+  (if (not (tblsearch "LTYPE" ltName))
+    (progn
+      (vl-catch-all-apply
+        '(lambda () (command "_.LINETYPE" "_L" ltName "acadiso.lin" "")))
+      (if (not (tblsearch "LTYPE" ltName))
+        (vl-catch-all-apply
+          '(lambda () (command "_.LINETYPE" "_L" ltName "acad.lin" "")))))))
+
+(defun pto:make-layer (name color ltype lweight / ltRec)
+  (setq ltRec (if (tblsearch "LTYPE" ltype) ltype "Continuous"))
+  (if (not (tblsearch "LAYER" name))
+    (entmake
+      (list '(0 . "LAYER")
+            '(100 . "AcDbSymbolTableRecord")
+            '(100 . "AcDbLayerTableRecord")
+            (cons 2 name)
+            '(70 . 0)
+            (cons 62 color)
+            (cons 6 ltRec)
+            (cons 370 lweight)))
+    (entmod
+      (list (cons -1 (tblobjname "LAYER" name))
+            (cons 62 color)
+            (cons 6 ltRec)
+            (cons 370 lweight)))))
+
+(defun pto:make-service-layers ( / )
+  (pto:load-ltype "CENTER2")
+  (pto:load-ltype "DASHED2")
+  (pto:load-ltype "HIDDEN2")
+  (pto:make-layer "ОСИ"          1   "CENTER2"    18)
+  (pto:make-layer "РАЗМЕРЫ"      3   "Continuous" 18)
+  (pto:make-layer "ТЕКСТ"        2   "Continuous" 18)
+  (pto:make-layer "ОБОРУДОВАНИЕ" 4   "Continuous" 35)
+  (pto:make-layer "АРМАТУРА"     6   "Continuous" 25)
+  (pto:make-layer "ИЗОЛЯЦИЯ"     8   "DASHED2"    18)
+  (pto:make-layer "ОПОРЫ"        9   "Continuous" 25)
+  (pto:make-layer "РАМКА"        7   "Continuous" 70))
+
+(defun c:СЛОИ-ПТО ( / oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (pto:make-service-layers)
+  (pto:make-layer "ТС-Т1"   1   "Continuous" 50)
+  (pto:make-layer "ТС-Т2"   2   "DASHED2"    50)
+  (pto:make-layer "ТС-ПОДЗ" 30  "HIDDEN2"    35)
+  (pto:make-layer "ТМ-Т1"   1   "Continuous" 50)
+  (pto:make-layer "ТМ-Т2"   2   "DASHED2"    50)
+  (pto:make-layer "ТК-Т1"   1   "Continuous" 35)
+  (pto:make-layer "ТК-Т2"   2   "DASHED2"    35)
+  (pto:make-layer "ОВ-ПОД"  30  "Continuous" 35)
+  (pto:make-layer "ОВ-ОБР"  10  "DASHED2"    35)
+  (pto:make-layer "ВК-ВОД"  5   "Continuous" 35)
+  (pto:make-layer "ВК-КАН"  3   "Continuous" 35)
+  (pto:make-layer "ВС-Х"    140 "Continuous" 35)
+  (pto:make-layer "ВС-ГВС"  30  "Continuous" 35)
+  (pto:make-layer "ТХ-ПР"   6   "Continuous" 50)
+  (pto:make-layer "ТХ-ВОЗ"  4   "DASHED2"    50)
+  (setvar "CMDECHO" oldEcho)
+  (princ "\n[ПТО] Стандартные слои ГОСТ 21.205-2021 созданы успешно.")
+  (princ))
+(defun c:PTO-LAYERS () (c:СЛОИ-ПТО))
+
+(defun c:ИСПРАВИТЬ-ШРИФТЫ ( / stName stData fn changedCount oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (setq changedCount 0)
+  (if (not (tblsearch "STYLE" "ГОСТ"))
+    (entmake (list '(0 . "STYLE") '(100 . "AcDbSymbolTableRecord") '(100 . "AcDbTextStyleTableRecord")
+                   '(2 . "ГОСТ") '(70 . 0) '(40 . 0.0) '(41 . 1.0) '(50 . 0.261799) '(71 . 0) '(3 . "isocpeur.ttf") '(4 . ""))))
+  (if (not (tblsearch "STYLE" "ШТАМП"))
+    (entmake (list '(0 . "STYLE") '(100 . "AcDbSymbolTableRecord") '(100 . "AcDbTextStyleTableRecord")
+                   '(2 . "ШТАМП") '(70 . 0) '(40 . 3.5) '(41 . 1.0) '(50 . 0.0) '(71 . 0) '(3 . "isocpeur.ttf") '(4 . ""))))
+  (setq stName (cdadr (tblnext "STYLE" T)))
+  (while stName
+    (setq stData (entget (tblobjname "STYLE" stName)))
+    (setq fn (strcase (cdr (assoc 3 stData))))
+    (if (or (wcmatch fn "*CS_GOST*") (wcmatch fn "*RUSSIA-GOST*") (wcmatch fn "*GOST COMMON*") (wcmatch fn "*SIMPLEX*") (wcmatch fn "*TXT.SHX*"))
+      (progn
+        (setq stData (subst (cons 3 "isocpeur.ttf") (assoc 3 stData) stData))
+        (entmod stData)
+        (setq changedCount (1+ changedCount))))
+    (setq stName (cdadr (tblnext "STYLE"))))
+  (command "_.REGEN")
+  (setvar "CMDECHO" oldEcho)
+  (princ (strcat "\n[ПТО] Шрифты исправлены на ISOCPEUR. Обновлено стилей: " (itoa changedCount)))
+  (princ))
+(defun c:FIX-FONTS () (c:ИСПРАВИТЬ-ШРИФТЫ))
+
+(defun c:РАМКА-ГОСТ ( / fmt ori w h pt0 pt1 insPt oldEcho oldLayer )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setq oldLayer (getvar "CLAYER"))
+  (setvar "CMDECHO" 0)
+  (pto:make-layer "РАМКА" 7 "Continuous" 70)
+  (setvar "CLAYER" "РАМКА")
+  (initget "A1 A2 A3 A4")
+  (setq fmt (getkword "\nФормат листа [A1/A2/A3/A4] <A3>: "))
+  (if (null fmt) (setq fmt "A3"))
+  (initget "Альбомная Книжная A K")
+  (setq ori (getkword "\nОриентация [Альбомная/Книжная] <Альбомная>: "))
+  (if (or (null ori) (= ori "A") (= ori "Альбомная")) (setq ori "A") (setq ori "K"))
+  (cond
+    ((= fmt "A1") (if (= ori "A") (setq w 841.0 h 594.0) (setq w 594.0 h 841.0)))
+    ((= fmt "A2") (if (= ori "A") (setq w 594.0 h 420.0) (setq w 420.0 h 594.0)))
+    ((= fmt "A3") (if (= ori "A") (setq w 420.0 h 297.0) (setq w 297.0 h 420.0)))
+    ((= fmt "A4") (setq w 210.0 h 297.0)))
+  (setq insPt (getpoint "\nТочка левого нижнего угла листа <0,0>: "))
+  (if (null insPt) (setq insPt '(0.0 0.0 0.0)))
+  (setq pt0 insPt)
+  (setq pt1 (list (+ (car pt0) w) (+ (cadr pt0) h) 0.0))
+  (command "_.RECTANGLE" pt0 pt1)
+  (command "_.RECTANGLE" (list (+ (car pt0) 20.0) (+ (cadr pt0) 5.0) 0.0) (list (- (car pt1) 5.0) (- (cadr pt1) 5.0) 0.0))
+  (command "_.RECTANGLE" (list (- (car pt1) 5.0 185.0) (+ (cadr pt0) 5.0) 0.0) (list (- (car pt1) 5.0) (+ (cadr pt0) 5.0 55.0) 0.0))
+  (setvar "CLAYER" oldLayer)
+  (setvar "CMDECHO" oldEcho)
+  (princ (strcat "\n[ПТО] Рамка " fmt " 1:1 построена."))
+  (princ))
+(defun c:PTO-FRAME () (c:РАМКА-ГОСТ))
+
+;; ==========================================================================
+;; БЛОК 2: ОЧИСТКА И СБРОС СВОЙСТВ
+;; ==========================================================================
+
+(defun pto:delete-selection (ss / i cnt)
+  (setq cnt 0)
+  (if ss
+    (progn
+      (setq cnt (sslength ss))
+      (setq i cnt)
+      (while (> i 0)
+        (setq i (1- i))
+        (entdel (ssname ss i)))))
+  cnt)
+
+(defun c:ОЧИСТКА-РАЗМЕРОВ ( / ss1 ss2 ss3 ss4 i ent ed txt cntDim cntLdr cntPoly cntText total )
+  (setq cntDim 0 cntLdr 0 cntPoly 0 cntText 0)
+  (setq ss1 (ssget "X" '((0 . "DIMENSION"))))
+  (setq cntDim (pto:delete-selection ss1))
+  (setq ss2 (ssget "X" '((0 . "LEADER,MLEADER"))))
+  (setq cntLdr (pto:delete-selection ss2))
+  (setq ss3 (ssget "X" '((0 . "LWPOLYLINE") (8 . "GT_1,Defpoints"))))
+  (setq cntPoly (pto:delete-selection ss3))
+  (setq ss4 (ssget "X" '((0 . "MTEXT,TEXT") (8 . "0"))))
+  (if ss4
+    (progn
+      (setq i (sslength ss4))
+      (while (> i 0)
+        (setq i (1- i))
+        (setq ent (ssname ss4 i))
+        (setq ed (entget ent))
+        (setq txt (cdr (assoc 1 ed)))
+        (if (wcmatch txt "*L=*")
+          (progn (entdel ent) (setq cntText (1+ cntText)))))))
+  (setq total (+ cntDim cntLdr cntPoly cntText))
+  (princ (strcat "\n[ПТО] Очистка размеров завершена. Удалено: " (itoa total)
+                 " (Размеров: " (itoa cntDim) ", Выносок: " (itoa cntLdr)
+                 ", Засечек: " (itoa cntPoly) ", L=...: " (itoa cntText) ")"))
+  (princ))
+(defun c:PURGE-DIMS () (c:ОЧИСТКА-РАЗМЕРОВ))
+
+(defun c:УДАЛИТЬ-ТЕКСТ ( / lay ss cnt )
+  (setq lay (getstring "\nВведите имя слоя (или Enter для удаления со всех слоев): "))
+  (if (or (null lay) (= lay ""))
+    (setq ss (ssget "X" '((0 . "TEXT,MTEXT"))))
+    (setq ss (ssget "X" (list '(0 . "TEXT,MTEXT") (cons 8 lay)))))
+  (setq cnt (pto:delete-selection ss))
+  (princ (strcat "\n[ПТО] Удалено текстов: " (itoa cnt)))
+  (princ))
+(defun c:PURGE-TEXT () (c:УДАЛИТЬ-ТЕКСТ))
+
+(defun c:УДАЛИТЬ-ШТРИХОВКУ ( / ss cnt )
+  (setq ss (ssget "X" '((0 . "HATCH"))))
+  (setq cnt (pto:delete-selection ss))
+  (princ (strcat "\n[ПТО] Удалено штриховок: " (itoa cnt)))
+  (princ))
+(defun c:PURGE-HATCH () (c:УДАЛИТЬ-ШТРИХОВКУ))
+
+(defun c:СБРОС-ПОСЛОЮ ( / ss i ent ed oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (vl-catch-all-apply '(lambda () (command "_.SETBYLAYER" "_ALL" "" "_Y" "_Y")))
+  (setq ss (ssget "X"))
+  (if ss
+    (progn
+      (setq i (sslength ss))
+      (while (> i 0)
+        (setq i (1- i))
+        (setq ent (ssname ss i))
+        (setq ed (entget ent))
+        (setq ed (vl-remove-if '(lambda (x) (member (car x) '(62 6 370 420 430))) ed))
+        (entmod ed))))
+  (setvar "CMDECHO" oldEcho)
+  (princ "\n[ПТО] Все свойства чертежа сброшены в ByLayer (ПоСлою).")
+  (princ))
+(defun c:RESET-BYLAYER () (c:СБРОС-ПОСЛОЮ))
+
+(defun c:ОБЕСЦВЕТИТЬ ( / layName layData oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (setq layName (cdadr (tblnext "LAYER" T)))
+  (while layName
+    (setq layData (entget (tblobjname "LAYER" layName)))
+    (setq layData (subst '(62 . 7) (assoc 62 layData) layData))
+    (entmod layData)
+    (setq layName (cdadr (tblnext "LAYER"))))
+  (c:СБРОС-ПОСЛОЮ)
+  (command "_.REGEN")
+  (setvar "CMDECHO" oldEcho)
+  (princ "\n[ПТО] Чертеж переведен в белый цвет (Цвет 7).")
+  (princ))
+(defun c:MAKE-WHITE () (c:ОБЕСЦВЕТИТЬ))
+
+(defun c:ПОЛНАЯ-ОЧИСТКА ( / oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (command "_.AUDIT" "_Y")
+  (command "_.PURGE" "_A" "*" "_N")
+  (command "_.PURGE" "_A" "*" "_N")
+  (setvar "CMDECHO" oldEcho)
+  (princ "\n[ПТО] База чертежа проверена (AUDIT) и очищена (PURGE).")
+  (princ))
+(defun c:PURGE-ALL () (c:ПОЛНАЯ-ОЧИСТКА))
+
+;; ==========================================================================
+;; БЛОК 3: ПОДСЧЁТ ОБЪЁМОВ, ДЛИН ТРУБ И МАССЫ
+;; ==========================================================================
+
+(defun pto:segment-length (p1 p2 bulge / c theta rad)
+  (setq c (distance p1 p2))
+  (if (or (null bulge) (equal bulge 0.0 1e-6))
+    c
+    (progn
+      (setq theta (* 4.0 (atan (abs bulge))))
+      (if (equal (sin (/ theta 2.0)) 0.0 1e-6)
+        c
+        (* (/ c (* 2.0 (abs (sin (/ theta 2.0))))) theta)))))
+
+(defun pto:get-entity-length (ent / ed tp len rad a1 a2)
+  (setq ed (entget ent))
+  (setq tp (cdr (assoc 0 ed)))
+  (setq len 0.0)
+  (cond
+    ((= tp "LINE")
+     (setq len (distance (cdr (assoc 10 ed)) (cdr (assoc 11 ed)))))
+    ((= tp "ARC")
+     (setq rad (cdr (assoc 40 ed)) a1 (cdr (assoc 50 ed)) a2 (cdr (assoc 51 ed)))
+     (if (< a2 a1) (setq a2 (+ a2 (* 2.0 pi))))
+     (setq len (* rad (- a2 a1))))
+    ((= tp "CIRCLE")
+     (setq len (* 2.0 pi (cdr (assoc 40 ed)))))
+    ((= tp "LWPOLYLINE")
+     (let ((vList '()) (bList '()) (closed 0) (curBulge 0.0) item subLen)
+       (setq closed (logand 1 (cdr (assoc 70 ed))))
+       (foreach item ed
+         (cond
+           ((= (car item) 10) (setq vList (cons (cdr item) vList) bList (cons curBulge bList) curBulge 0.0))
+           ((= (car item) 42) (setq curBulge (cdr item)))))
+       (setq vList (reverse vList))
+       (setq bList (append (reverse (cdr bList)) (list curBulge)))
+       (setq subLen 0.0)
+       (if (> (length vList) 1)
+         (let ((i 0) pA pB bVal)
+           (while (< i (1- (length vList)))
+             (setq pA (nth i vList) pB (nth (1+ i) vList) bVal (nth i bList))
+             (setq subLen (+ subLen (pto:segment-length pA pB bVal)))
+             (setq i (1+ i)))
+           (if (= closed 1)
+             (setq subLen (+ subLen (pto:segment-length (last vList) (car vList) (last bList)))))))
+       (setq len subLen))))
+  len)
+
+(defun pto:get-pipe-unit-weight (dy / table entry)
+  (setq table
+   '((15 . 1.28) (20 . 1.66) (25 . 2.41) (32 . 3.09) (40 . 3.84) (50 . 4.88)
+     (65 . 7.11) (80 . 8.38) (100 . 12.2) (125 . 15.0) (150 . 20.1) (200 . 31.5)
+     (250 . 45.7) (300 . 62.5) (350 . 81.6) (400 . 92.6) (500 . 128.0) (600 . 182.0)))
+  (setq entry (assoc dy table))
+  (if entry (cdr entry) nil))
+
+(defun c:ДЛИНА-ТРУБ ( / opt layName ss i ent totalMm totalM dy unitW massKg massWithMargin msg )
+  (initget "Слой Выбор Все")
+  (setq opt (getkword "\nРежим подсчёта [Слой/Выбор/Все] <Слой>: "))
+  (if (null opt) (setq opt "Слой"))
+  (cond
+    ((= opt "Слой")
+     (setq layName (getstring "\nИмя слоя (напр. ТС-Т1, ТМ-Т1): "))
+     (if (or (null layName) (= layName "")) (setq layName (getvar "CLAYER")))
+     (setq ss (ssget "X" (list (cons 8 layName) '(0 . "LINE,LWPOLYLINE,ARC")))))
+    ((= opt "Выбор")
+     (princ "\nВыберите трубы: ")
+     (setq ss (ssget '((0 . "LINE,LWPOLYLINE,ARC")))))
+    ((= opt "Все")
+     (setq ss (ssget "X" '((0 . "LINE,LWPOLYLINE,ARC"))))))
+  (if (null ss)
+    (princ "\n[ПТО] Объекты не найдены.")
+    (progn
+      (setq totalMm 0.0)
+      (setq i (sslength ss))
+      (while (> i 0)
+        (setq i (1- i))
+        (setq ent (ssname ss i))
+        (setq totalMm (+ totalMm (pto:get-entity-length ent))))
+      (setq totalM (/ totalMm 1000.0))
+      (setq dy (getint "\nВведите Ду в мм для массы трубы (Enter — пропустить): "))
+      (setq unitW (if dy (pto:get-pipe-unit-weight dy) nil))
+      (setq msg (strcat "\n[ПТО] РЕЗУЛЬТАТ ПОДСЧЁТА ТРУБОПРОВОДА:"
+                        "\n  Объектов:        " (itoa (sslength ss)) " шт."
+                        "\n  Длина:           " (rtos totalM 2 2) " м (" (rtos totalMm 2 1) " мм)"
+                        "\n  С запасом +2%:   " (rtos (* totalM 1.02) 2 2) " м"))
+      (if unitW
+        (progn
+          (setq massKg (* totalM unitW))
+          (setq massWithMargin (* massKg 1.02))
+          (setq msg (strcat msg
+                            "\n  Труба:           Ду " (itoa dy) " (" (rtos unitW 2 2) " кг/м)"
+                            "\n  Масса:           " (rtos massKg 2 1) " кг (" (rtos (/ massKg 1000.0) 2 3) " т)"
+                            "\n  Масса (+2%):     " (rtos massWithMargin 2 1) " кг (" (rtos (/ massWithMargin 1000.0) 2 3) " т)"))))
+      (princ msg)
+      (if (vl-symbol-value 'alert) (alert msg))))
+  (princ))
+(defun c:PIPE-LEN () (c:ДЛИНА-ТРУБ))
+
+(defun c:ПОДСЧЕТ-БЛОКОВ ( / ss i ent ed bName blkList pair total msg )
+  (setq ss (ssget "X" '((0 . "INSERT"))))
+  (if (null ss)
+    (princ "\n[ПТО] Блоки не найдены.")
+    (progn
+      (setq blkList '())
+      (setq i (sslength ss))
+      (while (> i 0)
+        (setq i (1- i))
+        (setq ent (ssname ss i))
+        (setq ed (entget ent))
+        (setq bName (cdr (assoc 2 ed)))
+        (setq pair (assoc bName blkList))
+        (if pair
+          (setq blkList (subst (cons bName (1+ (cdr pair))) pair blkList))
+          (setq blkList (cons (cons bName 1) blkList))))
+      (setq blkList (vl-sort blkList '(lambda (a b) (< (car a) (car b)))))
+      (setq total 0)
+      (setq msg "\n[ПТО] СПЕЦИФИКАЦИЯ БЛОКОВ (АРМАТУРА / УЗЛЫ):")
+      (foreach pair blkList
+        (setq total (+ total (cdr pair)))
+        (setq msg (strcat msg "\n  " (car pair) " : " (itoa (cdr pair)) " шт.")))
+      (setq msg (strcat msg "\nИТОГО блоков: " (itoa total) " шт."))
+      (princ msg)
+      (if (vl-symbol-value 'alert) (alert msg))))
+  (princ))
+(defun c:COUNT-BLOCKS () (c:ПОДСЧЕТ-БЛОКОВ))
+
+(defun c:ПОДСЧЕТ-СТЫКОВ ( / ss i ent ed txt jointList total msg )
+  (setq ss (ssget "X" '((0 . "TEXT,MTEXT"))))
+  (setq jointList '())
+  (if ss
+    (progn
+      (setq i (sslength ss))
+      (while (> i 0)
+        (setq i (1- i))
+        (setq ent (ssname ss i))
+        (setq ed (entget ent))
+        (setq txt (strcase (cdr (assoc 1 ed))))
+        (if (or (wcmatch txt "*СТ.*") (wcmatch txt "*СТЫК*") (wcmatch txt "*СТ-*"))
+          (setq jointList (cons (cdr (assoc 1 ed)) jointList))))))
+  (setq total (length jointList))
+  (setq msg (strcat "\n[ПТО] Всего маркеров сварных стыков: " (itoa total) " шт."))
+  (princ msg)
+  (if (vl-symbol-value 'alert) (alert msg))
+  (princ))
+(defun c:COUNT-JOINTS () (c:ПОДСЧЕТ-СТЫКОВ))
+
+;; ==========================================================================
+;; БЛОК 4: ИНСТРУМЕНТЫ ЧЕРЧЕНИЯ И СХЕМ
+;; ==========================================================================
+
+(defun pto:text-angle (ang / )
+  (while (> ang pi) (setq ang (- ang (* 2.0 pi))))
+  (while (< ang (- pi)) (setq ang (+ ang (* 2.0 pi))))
+  (if (or (> ang (/ pi 2.0)) (< ang (- (/ pi 2.0)))) (+ ang pi) ang))
+
+(defun c:ОТВОД-ДУГА ( / dy typeCho r oldEcho )
+  (setq oldEcho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (setq dy (getreal "\nВведите Ду трубы (мм) [50, 100, 150, 200, 250...]: "))
+  (if (and dy (> dy 0))
+    (progn
+      (initget "3D 2D")
+      (setq typeCho (getkword "\nТип отвода [3D-ГОСТ17375(R=1.5Dy) / 2D-ГОСТ30753(R=1.0Dy)] <3D>: "))
+      (if (null typeCho) (setq typeCho "3D"))
+      (setq r (if (= typeCho "3D") (* 1.5 dy) (* 1.0 dy)))
+      (setvar "FILLETRAD" r)
+      (princ (strcat "\n[ПТО] Радиус сопряжения: " (rtos r 2 1) " мм (Ду" (rtos dy 2 0) ")."))
+      (setvar "CMDECHO" 1)
+      (command "_.FILLET"))
+    (princ "\n[ПТО] Некорректный диаметр."))
+  (setvar "CMDECHO" oldEcho)
+  (princ))
+(defun c:BEND () (c:ОТВОД-ДУГА))
+
+(defun c:СТЫК ( / pt1 pt2 shelfPt str oldEcho oldLayer oldOsm txtPt )
+  (setq oldEcho (getvar "CMDECHO") oldLayer (getvar "CLAYER") oldOsm (getvar "OSMODE"))
+  (setvar "CMDECHO" 0)
+  (if (not (tblsearch "LAYER" "АРМАТУРА"))
+    (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+               (2 . "АРМАТУРА") (70 . 0) (62 . 6) (6 . "Continuous") (370 . 25))))
+  (if (not (tblsearch "LAYER" "ТЕКСТ"))
+    (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+               (2 . "ТЕКСТ") (70 . 0) (62 . 2) (6 . "Continuous") (370 . 18))))
+  (princ (strcat "\n[ПТО] Расстановка стыков. Следующий номер: " (itoa *pto-weld-counter*)))
+  (while (setq pt1 (getpoint "\nТочка стыка на трубе (Enter — завершить): "))
+    (setq pt2 (getpoint pt1 "\nПоложение полки выноски: "))
+    (if pt2
+      (progn
+        (setvar "OSMODE" 0)
+        (setvar "CLAYER" "АРМАТУРА")
+        (command "_.DONUT" 0.0 3.5 pt1 "")
+        (setq shelfPt (if (>= (car pt2) (car pt1))
+                        (list (+ (car pt2) 15.0) (cadr pt2) 0.0)
+                        (list (- (car pt2) 15.0) (cadr pt2) 0.0)))
+        (command "_.PLINE" pt1 pt2 shelfPt "")
+        (setvar "CLAYER" "ТЕКСТ")
+        (setq str (strcat "ст." (itoa *pto-weld-counter*)))
+        (setq txtPt (if (>= (car pt2) (car pt1))
+                      (list (+ (car pt2) 2.0) (+ (cadr pt2) 1.2) 0.0)
+                      (list (- (car pt2) 13.0) (+ (cadr pt2) 1.2) 0.0)))
+        (command "_.TEXT" txtPt 3.0 0 str)
+        (setq *pto-weld-counter* (1+ *pto-weld-counter*))
+        (setvar "OSMODE" oldOsm))))
+  (setvar "OSMODE" oldOsm) (setvar "CLAYER" oldLayer) (setvar "CMDECHO" oldEcho)
+  (princ))
+(defun c:WELD () (c:СТЫК))
+
+(defun c:СТЫК-НОМЕР ( / val )
+  (setq val (getint (strcat "\nСледующий номер стыка <" (itoa *pto-weld-counter*) ">: ")))
+  (if (and val (> val 0)) (setq *pto-weld-counter* val))
+  (princ (strcat "\n[ПТО] Номер стыка: " (itoa *pto-weld-counter*)))
+  (princ))
+(defun c:WELD-NUM () (c:СТЫК-НОМЕР))
+
+(defun c:ПОЗИЦИЯ ( / pt1 pt2 shelfPt str oldEcho oldLayer oldOsm txtPt pA pB )
+  (setq oldEcho (getvar "CMDECHO") oldLayer (getvar "CLAYER") oldOsm (getvar "OSMODE"))
+  (setvar "CMDECHO" 0)
+  (if (not (tblsearch "LAYER" "ТЕКСТ"))
+    (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+               (2 . "ТЕКСТ") (70 . 0) (62 . 2) (6 . "Continuous") (370 . 18))))
+  (princ (strcat "\n[ПТО] Выноски позиций. Текущая позиция: [" (itoa *pto-tag-counter*) "]"))
+  (while (setq pt1 (getpoint "\nУкажите элемент (Enter — выход): "))
+    (setq pt2 (getpoint pt1 "\nТочка полки позиции: "))
+    (if pt2
+      (progn
+        (setvar "OSMODE" 0)
+        (setvar "CLAYER" "ТЕКСТ")
+        (setq str (itoa *pto-tag-counter*))
+        (if (>= (car pt2) (car pt1))
+          (setq shelfPt (list (+ (car pt2) 12.0) (cadr pt2) 0.0)
+                pA (list (+ (car pt2) 2.0) (- (cadr pt2) 3.0) 0.0)
+                pB (list (+ (car pt2) 12.0) (+ (cadr pt2) 5.0) 0.0)
+                txtPt (list (+ (car pt2) 7.0) (+ (cadr pt2) 1.0) 0.0))
+          (setq shelfPt (list (- (car pt2) 12.0) (cadr pt2) 0.0)
+                pA (list (- (car pt2) 12.0) (- (cadr pt2) 3.0) 0.0)
+                pB (list (- (car pt2) 2.0) (+ (cadr pt2) 5.0) 0.0)
+                txtPt (list (- (car pt2) 7.0) (+ (cadr pt2) 1.0) 0.0)))
+        (command "_.LINE" pt1 pt2 "")
+        (command "_.RECTANGLE" pA pB)
+        (command "_.TEXT" "_J" "_MC" txtPt 3.5 0 str)
+        (setq *pto-tag-counter* (1+ *pto-tag-counter*))
+        (setvar "OSMODE" oldOsm))))
+  (setvar "OSMODE" oldOsm) (setvar "CLAYER" oldLayer) (setvar "CMDECHO" oldEcho)
+  (princ))
+(defun c:SPEC-TAG () (c:ПОЗИЦИЯ))
+
+(defun c:УКЛОН ( / p1 p2 ang txtVal oldEcho oldLayer oldOsm midPt pArr1 pArr2 txtPt tAng )
+  (setq oldEcho (getvar "CMDECHO") oldLayer (getvar "CLAYER") oldOsm (getvar "OSMODE"))
+  (setvar "CMDECHO" 0)
+  (setq p1 (getpoint "\nНачальная точка уклона (высокая отметка): "))
+  (if p1 (setq p2 (getpoint p1 "\nКонечная точка (в сторону стока): ")))
+  (if (and p1 p2)
+    (progn
+      (setq txtVal (getstring "\nУклон <i=0.002>: "))
+      (if (or (null txtVal) (= txtVal "")) (setq txtVal "i=0.002"))
+      (setvar "OSMODE" 0)
+      (if (not (tblsearch "LAYER" "ТЕКСТ"))
+        (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+                   (2 . "ТЕКСТ") (70 . 0) (62 . 2) (6 . "Continuous") (370 . 18))))
+      (setvar "CLAYER" "ТЕКСТ")
+      (setq ang (angle p1 p2))
+      (setq midPt (list (/ (+ (car p1) (car p2)) 2.0) (/ (+ (cadr p1) (cadr p2)) 2.0) 0.0))
+      (setq pArr1 (polar midPt (+ ang pi) 5.0) pArr2 (polar midPt ang 5.0))
+      (command "_.PLINE" pArr1 "_W" 0.0 0.0 (polar pArr2 (+ ang pi) 2.5) "_W" 1.0 0.0 pArr2 "")
+      (setq txtPt (polar midPt (+ ang (/ pi 2.0)) 3.5))
+      (setq tAng (* (pto:text-angle ang) (/ 180.0 pi)))
+      (command "_.TEXT" "_J" "_BC" txtPt 3.0 tAng txtVal)
+      (princ (strcat "\n[ПТО] Уклон " txtVal " нанесен."))))
+  (setvar "OSMODE" oldOsm) (setvar "CLAYER" oldLayer) (setvar "CMDECHO" oldEcho)
+  (princ))
+(defun c:SLOPE () (c:УКЛОН))
+
+(defun c:АРМАТУРА-ГОСТ ( / symType pt pt2 ang pA pB pTop pBot oldEcho oldLayer oldOsm L H )
+  (setq oldEcho (getvar "CMDECHO") oldLayer (getvar "CLAYER") oldOsm (getvar "OSMODE"))
+  (setvar "CMDECHO" 0)
+  (initget "Кран Задвижка Обратный Вентиль Фланец ОпораН ОпораС")
+  (setq symType (getkword "\nТип [Кран/Задвижка/Обратный/Вентиль/Фланец/ОпораН/ОпораС] <Кран>: "))
+  (if (null symType) (setq symType "Кран"))
+  (setq pt (getpoint "\nТочка врезки арматуры на трубе: "))
+  (if pt
+    (progn
+      (setq pt2 (getpoint pt "\nТочка вдоль оси трубы (направление): "))
+      (setq ang (if pt2 (angle pt pt2) 0.0))
+      (setvar "OSMODE" 0)
+      (setq L 5.0 H 3.5)
+      (setq pA (polar pt (+ ang pi) L) pB (polar pt ang L)
+            pTop (polar pt (+ ang (/ pi 2.0)) H) pBot (polar pt (- ang (/ pi 2.0)) H))
+      (if (wcmatch symType "Опора*")
+        (progn
+          (if (not (tblsearch "LAYER" "ОПОРЫ"))
+            (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+                       (2 . "ОПОРЫ") (70 . 0) (62 . 9) (6 . "Continuous") (370 . 25))))
+          (setvar "CLAYER" "ОПОРЫ"))
+        (progn
+          (if (not (tblsearch "LAYER" "АРМАТУРА"))
+            (entmake '((0 . "LAYER") (100 . "AcDbSymbolTableRecord") (100 . "AcDbLayerTableRecord")
+                       (2 . "АРМАТУРА") (70 . 0) (62 . 6) (6 . "Continuous") (370 . 25))))
+          (setvar "CLAYER" "АРМАТУРА")))
+      (cond
+        ((= symType "Кран")
+         (command "_.PLINE" (polar pA (+ ang (/ pi 2.0)) H) (polar pA (- ang (/ pi 2.0)) H) pt (polar pA (+ ang (/ pi 2.0)) H) "")
+         (command "_.PLINE" (polar pB (+ ang (/ pi 2.0)) H) (polar pB (- ang (/ pi 2.0)) H) pt (polar pB (+ ang (/ pi 2.0)) H) ""))
+        ((= symType "Задвижка")
+         (command "_.LINE" (polar pA (+ ang (/ pi 2.0)) H) (polar pA (- ang (/ pi 2.0)) H) "")
+         (command "_.LINE" (polar pB (+ ang (/ pi 2.0)) H) (polar pB (- ang (/ pi 2.0)) H) "")
+         (command "_.LINE" pA pB "")
+         (command "_.CIRCLE" pt 1.2))
+        ((= symType "Обратный")
+         (command "_.PLINE" (polar pA (+ ang (/ pi 2.0)) H) (polar pA (- ang (/ pi 2.0)) H) pt (polar pA (+ ang (/ pi 2.0)) H) "")
+         (command "_.LINE" (polar pt (+ ang (/ pi 2.0)) H) (polar pt (- ang (/ pi 2.0)) H) "")
+         (command "_.LINE" pt pB ""))
+        ((= symType "Вентиль")
+         (command "_.PLINE" (polar pt (+ ang (/ pi 2.0)) H) (polar pA (+ ang (/ pi 2.0)) H) (polar pB (+ ang (/ pi 2.0)) H) pt (polar pt (+ ang (/ pi 2.0)) H) "")
+         (command "_.LINE" pt (polar pt (- ang (/ pi 2.0)) H) ""))
+        ((= symType "Фланец")
+         (let ((f1 (polar pt (+ ang pi) 1.5)) (f2 (polar pt ang 1.5)))
+           (command "_.LINE" (polar f1 (+ ang (/ pi 2.0)) H) (polar f1 (- ang (/ pi 2.0)) H) "")
+           (command "_.LINE" (polar f2 (+ ang (/ pi 2.0)) H) (polar f2 (- ang (/ pi 2.0)) H) "")))
+        ((= symType "ОпораН")
+         (command "_.LINE" pTop pBot "")
+         (command "_.LINE" (polar pt (+ ang (/ pi 4.0)) H) (polar pt (- ang (* 3.0 (/ pi 4.0))) H) "")
+         (command "_.LINE" (polar pt (- ang (/ pi 4.0)) H) (polar pt (+ ang (* 3.0 (/ pi 4.0))) H) ""))
+        ((= symType "ОпораС")
+         (let ((s1 (polar pt (+ ang pi) 2.5)) (s2 (polar pt ang 2.5)))
+           (command "_.LINE" (polar s1 (+ ang (/ pi 2.0)) H) (polar s1 (- ang (/ pi 2.0)) H) "")
+           (command "_.LINE" (polar s2 (+ ang (/ pi 2.0)) H) (polar s2 (- ang (/ pi 2.0)) H) "")
+           (command "_.LINE" (polar pt (+ ang (/ pi 2.0)) H) (polar pt (- ang (/ pi 2.0)) H) ""))))
+      (princ (strcat "\n[ПТО] Элемент '" symType "' построен."))))
+  (setvar "OSMODE" oldOsm) (setvar "CLAYER" oldLayer) (setvar "CMDECHO" oldEcho)
+  (princ))
+(defun c:VALVE-SYM () (c:АРМАТУРА-ГОСТ))
+
+;; ==========================================================================
+;; БАННЕР ПРИ ЗАГРУЗКЕ
+;; ==========================================================================
+
+(defun c:ПТО-МЕНЮ ()
+  (princ "\n==========================================================================")
+  (princ "\n   КОМАНДЫ ПАКЕТА PTO_TOOLS ДЛЯ ИНЖЕНЕРА ПТО (ТХ/ВК/ВС/ОВ/ТК/ТМ/ТС):")
+  (princ "\n==========================================================================")
+  (princ "\n [1] СЛОИ И ОФОРМЛЕНИЕ:")
+  (princ "\n     СЛОИ-ПТО        / PTO-LAYERS    — создание слоев ГОСТ 21.205")
+  (princ "\n     ИСПРАВИТЬ-ШРИФТЫ / FIX-FONTS     — замена битых шрифтов на ISOCPEUR")
+  (princ "\n     РАМКА-ГОСТ      / PTO-FRAME     — рамка А1-А4 с отступами и штампом")
+  (princ "\n [2] ОЧИСТКА И ОБРАБОТКА:")
+  (princ "\n     ОЧИСТКА-РАЗМЕРОВ / PURGE-DIMS   — удаление DIMENSION, засечек и L=...")
+  (princ "\n     СБРОС-ПОСЛОЮ    / RESET-BYLAYER — сброс всех свойств объектов в ByLayer")
+  (princ "\n     ОБЕСЦВЕТИТЬ     / MAKE-WHITE    — перевод всего чертежа в белый (Color 7)")
+  (princ "\n     ПОЛНАЯ-ОЧИСТКА  / PURGE-ALL     — аудит и очистка неиспользуемых блоков")
+  (princ "\n [3] ПОДСЧЁТ ОБЪЁМОВ (ВОР):")
+  (princ "\n     ДЛИНА-ТРУБ      / PIPE-LEN      — подсчёт длины (м) и массы труб (кг/т)")
+  (princ "\n     ПОДСЧЕТ-БЛОКОВ  / COUNT-BLOCKS  — ведомость арматуры и оборудования")
+  (princ "\n     ПОДСЧЕТ-СТЫКОВ  / COUNT-JOINTS  — количество маркеров стыков ст.N")
+  (princ "\n [4] ЧЕРЧЕНИЕ ТРУБОПРОВОДОВ:")
+  (princ "\n     ОТВОД-ДУГА      / BEND          — радиусный отвод ГОСТ 17375/30753")
+  (princ "\n     СТЫК            / WELD          — маркер ст.N с автонумерацией")
+  (princ "\n     ПОЗИЦИЯ         / SPEC-TAG      — выноска позиции спецификации [N]")
+  (princ "\n     УКЛОН           / SLOPE         — стрелка уклона i=...")
+  (princ "\n     АРМАТУРА-ГОСТ   / VALVE-SYM     — краны, задвижки, фланцы, опоры")
+  (princ "\n==========================================================================")
+  (princ)
+)
+
+(c:ПТО-МЕНЮ)
+(princ "\n[ПТО] Пакет pto_tools.lsp успешно загружен! Введите ПТО-МЕНЮ для справки.")
+(princ)
