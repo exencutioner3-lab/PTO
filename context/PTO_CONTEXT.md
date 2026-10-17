@@ -28,6 +28,9 @@
 | Рабочая папка | `G:\Мой диск\Workspace\` |
 | Временная папка (для скриптов) | `C:\Temp\` |
 | ezdxf (Python) | установлен — только для DXF, **не** для DWG |
+| Git (CLI) | `C:\Users\User\AppData\Local\Programs\Git\cmd\git.exe` (в PATH) |
+| GitHub CLI (`gh`) | `C:\Users\User\bin\gh.exe` (в PATH) |
+| GitHub аккаунт | `exencutioner3-lab` (репозиторий: `PTO`) |
 
 ---
 
@@ -57,6 +60,23 @@
 9. **Перевод чертежа в белый цвет (монохром)**: использовать готовый скрипт:
    `& "C:\Users\User\.gemini\config\skills\pto-autocad-schemes\references\make_drawing_white.ps1" -FilePath "G:\Мой диск\Workspace\ЧЕРТЁЖ.dwg"`
    (Выполняет экспорт в DXF, сброс всех слоёв и объектов в цвет 7, удаление TrueColor 420/430 и очистку тегов `\C...;` в текстах за ~5 секунд).
+
+---
+
+## Правила работы с Git и GitHub
+
+1. **SSL-ошибка `CRYPT_E_REVOCATION_OFFLINE (0x80092013)`**:
+   В Windows Schannel проверку отзыва сертификатов блокирует сеть/провайдер. Всегда настраивать:
+   ```powershell
+   git config --global http.sslBackend openssl
+   git config --global http.schannelCheckRevoke false
+   ```
+
+2. **Кириллица в путях и именах файлов Git**:
+   Обязательно `git config --global core.quotepath false`.
+
+3. **Браузерный Qwen Coder и выбор ветки (`branchList`)**:
+   Веб-интерфейс Qwen Coder требует наличия ветки `main` с коммитами в репозитории GitHub. Если репозиторий пуст, возникает ошибка *«Пожалуйста, сначала выберите branchList»*. Решение: выполнить локальный `git push -u origin main`, затем обновить страницу Qwen Coder в браузере (F5).
 
 ---
 

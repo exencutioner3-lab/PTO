@@ -24,6 +24,9 @@
 | **Рабочая директория**| `G:\Мой диск\Workspace\` | Содержит кириллицу! |
 | **Временная папка** | `C:\Temp\` | Исключительно ASCII, для всех операций |
 | **ezdxf (Python)** | Установлен | **Только для DXF**, DWG не поддерживает! |
+| **Git (CLI)** | `C:\Users\User\AppData\Local\Programs\Git\cmd\git.exe` | В PATH, `sslBackend=openssl` |
+| **GitHub CLI (`gh`)**| `C:\Users\User\bin\gh.exe` | В PATH, аккаунт `exencutioner3-lab` |
+| **GitHub Репозиторий**| `https://github.com/exencutioner3-lab/PTO.git` | Ветка `main` |
 
 ---
 
